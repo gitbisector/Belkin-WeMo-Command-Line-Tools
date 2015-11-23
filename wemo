@@ -17,11 +17,9 @@
 COPYRIGHT="2015 James Borkowski @github:agilemation" # © Notice, displayed with --help
 ACKNOWLEDGEMENT="Third-party trademarks mentioned are the property of their respective owners."
 USAGE_TEXT="-h [ IP/HOSTNAME ] -a [ ACTION ] [[ -ver ] | [ -? ]] | [ -s ] | [ -v ] | [ -V ] | [ -t ] | [ -T ]] [[ -tt ]] 
-
 Arguments:
     [ -h | --host ]    IP_ADDRESS | HOSTNAME
-    [ -a | --action ]  ON | OFF | GETSTATE | GETSIGNALSTRENGTH | GETNAME | SETNAME NAME
-
+    [ -a | --action ]  ON | OFF | GETSTATE | GETSIGNALSTRENGTH | GETNAME | SETNAME NAME | HOT | LOW | WARM | POTSTATE
 Optional Arguments: 
     [ -s | --silent ]        
     [ -v | --verbose ]        
@@ -82,7 +80,7 @@ usage ()
 
 restPostXmlStdinBelkinSoap ()
 {
-    # This funciton takes an XML SOAP payload from Standard In and creates an
+    # This function takes an XML SOAP payload from Standard In and creates an
     # HTTP POST that it submits to the Belkin WeMo, it offers variuous levels of
     # debug, nameley - [[ -v | --verbose ]            [ -t | --trace]
     #                   [ -T | --trace-raw ]]  opt: [[ -tt | --trace-time ]]
@@ -143,7 +141,7 @@ restPostXmlStdinBelkinSoap ()
        ${VERBOSE_FLAGstr}                                                      \
        ${TRACE_FLAGstr}                                                        \
        ${TRACE_TIME_FLAGstr}                                                   \
-       --http1.0                                                               \
+       --http1.1                                                               \
        --user-agent ''                                                         \
        --request POST                                                          \
        --header 'Accept: '                                                     \
@@ -188,7 +186,23 @@ filterExtractValue ()
     if testBoolTrue "${EXTRACT_VALUE_FROM_RESPONSE}"
     then
         # Normal run, so lets grab just the value the user wants to see
-        grep '<BinaryState>\|<SignalStrength>\|<FriendlyName>'                 |
+        grep '<BinaryState>\|<SignalStrength>\|<FriendlyName>\|<mode>'                 |
+            cut -d '>' -f2                                                     |
+            cut -d '<' -f1
+    else
+        # Running in a debug/verbose/trace mode so lets just let it pass through
+        cat -
+        printf '\n'
+    fi
+}
+
+filterModeValue ()
+{
+    # If we are running in any of the debug modes, we don't want to alter output
+    if testBoolTrue "${EXTRACT_VALUE_FROM_RESPONSE}"
+    then
+        # Normal run, so lets grab just the value the user wants to see
+        grep '<mode>'                 |
             cut -d '>' -f2                                                     |
             cut -d '<' -f1
     else
@@ -205,6 +219,19 @@ filterHumanizeBinary ()
     then
         # Normal run, so lets change '0's to OFF and '1's to ON
         sed -e 's/0/OFF/g' -e 's/1/ON/g'
+    else
+        # Running in a debug/verbose/trace mode so lets just let it pass through
+        cat -
+    fi
+}
+
+filterHumanizeMode ()
+{
+    # If we are running in any of the debug modes, we don't want to alter output
+    if testBoolTrue "${EXTRACT_VALUE_FROM_RESPONSE}"
+    then
+        # Normal run, so lets change '0's to OFF and '1's to ON
+        sed -e 's/50/Warm/g' -e 's/51/Low/g' -e 's/52/Hot/g'
     else
         # Running in a debug/verbose/trace mode so lets just let it pass through
         cat -
@@ -239,6 +266,10 @@ do
                 [Gg][Ee][Tt][Ss][Tt][Aa][Tt][Ee]                                        | \
                 [Oo][Nn]                                                                | \
                 [Oo][Ff][Ff]                                                            | \
+                [Hh][Oo][Tt]                                                          | \
+                [Ll][Oo][Ww]                                                          | \
+                [Ww][Aa][Rr][Mm]                                                  | \
+                [Pp][Oo][Tt][Ss][Tt][Aa][Tt][Ee]                             | \
                 [Gg][Ee][Tt][Ss][Ii][Gg][Nn][Aa][Ll][Ss][Tt][Rr][Ee][Nn][Gg][Tt][Hh]    | \
                 [Gg][Ee][Tt][Nn][Aa][Mm][Ee] )
                     RUN_ACTION="${1}"
@@ -376,6 +407,85 @@ else
         handleOutput                                                           |
         filterXmlClean
         ;;
+    [Hh][Oo][Tt] )
+        printf '%s\n'                                                          \
+        '<?xml version="1.0" encoding="utf-8"?>
+        <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"
+                    s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+            <s:Body>
+                <u:SetCrockpotState xmlns:u="urn:Belkin:service:basicevent:1">
+                    <mode>52</mode>
+                    <time>1500></time>
+                </u:SetCrockpotState>
+            </s:Body>
+        </s:Envelope>'                                                         |
+        restPostXmlStdinBelkinSoap                                             \
+            ${VERBOSE_FLAGstr} ${TRACE_FLAGstr} ${TRACE_TIME_FLAGstr}          \
+            --soap 'urn:Belkin:service:basicevent:1#SetCrockpotState'        \
+            --url "http://${DEVICE_HOST}:${PORT}/upnp/control/basicevent1"     |
+        filterExtractValue                                                     |
+        handleOutput                                                           |
+        filterXmlClean
+        ;;        
+    [Ll][Oo][Ww] )
+        printf '%s\n'                                                          \
+        '<?xml version="1.0" encoding="utf-8"?>
+        <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"
+                    s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+            <s:Body>
+                <u:SetCrockpotState xmlns:u="urn:Belkin:service:basicevent:1">
+                    <mode>51</mode>
+                    <time>1500></time>
+                </u:SetCrockpotState>
+            </s:Body>
+        </s:Envelope>'                                                         |
+        restPostXmlStdinBelkinSoap                                             \
+            ${VERBOSE_FLAGstr} ${TRACE_FLAGstr} ${TRACE_TIME_FLAGstr}          \
+            --soap 'urn:Belkin:service:basicevent:1#SetCrockpotState'        \
+            --url "http://${DEVICE_HOST}:${PORT}/upnp/control/basicevent1"     |
+        filterExtractValue                                                     |
+        handleOutput                                                           |
+        filterXmlClean
+        ;;                
+    [Ww][Aa][Rr][Mm] )
+        printf '%s\n'                                                          \
+        '<?xml version="1.0" encoding="utf-8"?>
+        <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"
+                    s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+            <s:Body>
+                <u:SetCrockpotState xmlns:u="urn:Belkin:service:basicevent:1">
+                    <mode>50</mode>
+                    <time>1500></time>
+                </u:SetCrockpotState>
+            </s:Body>
+        </s:Envelope>'                                                         |
+        restPostXmlStdinBelkinSoap                                             \
+            ${VERBOSE_FLAGstr} ${TRACE_FLAGstr} ${TRACE_TIME_FLAGstr}          \
+            --soap 'urn:Belkin:service:basicevent:1#SetCrockpotState'        \
+            --url "http://${DEVICE_HOST}:${PORT}/upnp/control/basicevent1"     |
+        filterExtractValue                                                     |
+        handleOutput                                                           |
+        filterXmlClean
+        ;;                
+    [Pp][Oo][Tt][Ss][Tt][Aa][Tt][Ee] )
+        printf '%s\n'                                                          \
+        '<?xml version="1.0" encoding="utf-8"?>
+        <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"
+                    s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+            <s:Body>
+                <u:GetCrockpotState xmlns:u="urn:Belkin:service:basicevent:1">
+                </u:GetCrockpotState>
+            </s:Body>
+        </s:Envelope>'                                                         |
+        restPostXmlStdinBelkinSoap                                             \
+            ${VERBOSE_FLAGstr} ${TRACE_FLAGstr} ${TRACE_TIME_FLAGstr}          \
+            --soap 'urn:Belkin:service:basicevent:1#GetCrockpotState'         \
+            --url "http://${DEVICE_HOST}:${PORT}/upnp/control/basicevent1"     |
+        filterModeValue                                                     |
+        filterHumanizeMode                                              |
+        handleOutput                                                           |
+        filterXmlClean
+        ;;
     [Gg][Ee][Tt][Ss][Ii][Gg][Nn][Aa][Ll][Ss][Tt][Rr][Ee][Nn][Gg][Tt][Hh] )
         printf '%s\n'                                                          \
         '<?xml version="1.0" encoding="utf-8"?>
@@ -444,3 +554,4 @@ else
         ;;
     esac
 fi
+
